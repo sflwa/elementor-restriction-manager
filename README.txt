@@ -3,7 +3,7 @@ Contributors: sflwa
 Tags: elementor, wp-cli, display-conditions, migration, restrict-for-elementor
 Requires at least: 6.0
 Tested up to: 7.0
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 Requires PHP: 8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -14,11 +14,12 @@ Automate the migration from legacy "Restrict for Elementor" settings to native E
 
 **SFLWA Elementor Restriction Updater** provides an agency-grade, automated utility to scan, back up, migrate, and clean up legacy "Restrict for Elementor" settings across your site, replacing them seamlessly with native Elementor Display Conditions (`e_display_conditions`).
 
-Effortlessly transition away from buggy third-party restriction plugins by executing granular updates on specific post IDs or running site-wide migrations—either directly through WP-CLI or via a native dashboard interface under **Tools > Elementor Migration**.
+Effortlessly transition away from buggy third-party restriction plugins by executing granular updates on specific post IDs, appending fallback templates for logged-out users, or running site-wide migrations—either directly through WP-CLI or via a native dashboard interface under **Tools > Elementor Migration**.
 
 ### Key Features:
 * **Dual Execution Modes:** Perform scans and migrations using dedicated WP-CLI commands or through the built-in WP-Admin dashboard interface under **Tools > Elementor Migration**.
 * **Granular Control & Post ID Filtering:** Pass specific post IDs (e.g., `--post_id=2438,6980`) via CLI or the Admin UI filter to run targeted migrations without touching the rest of your site.
+* **Optional Fallback Template Injection:** Select or pass an Elementor Template ID (`--append_template=2429`) to automatically build and append a new bottom-level container housing that template, restricted natively to Logged-Out users.
 * **Post Status Awareness:** Instantly distinguish between live pages (`publish`), revisions (`revision`), draft, or private post states during scanning.
 * **1:1 Migration Mapping:** Maps legacy roles (`user_role`), logged-in status (`logged_in_users`), and logged-out status (`logged_out_users`) cleanly into native Elementor Display Conditions payload structures.
 * **Orphaned Metadata Cleanup:** Detects and strips leftover plugin meta keys and corrupted settings left behind by earlier plugin versions.
@@ -51,7 +52,11 @@ Converts legacy restrictions to Elementor's native Display Conditions, strips ol
 
 *Optional Flags:*
 * `--post_id=2438,6980` : Restricts migration to specific post IDs.
+* `--append_template=2429` : Appends a root-level container with the specified Elementor Template ID set to Logged-Out visibility.
 * `--skip-backup` : Runs the migration without creating a backup postmeta key.
+
+*Example combining filters and template appending:*
+`wp migrate-elementor-restrictions --post_id=2438 --append_template=2429`
 
 = 4. Rollback Changes =
 Restores the original `_elementor_data` state from `_elementor_data_backup_legacy`:
@@ -66,9 +71,13 @@ Permanently removes the temporary backup postmeta keys when migration is verifie
 == Screenshots ==
 
 1. **Admin Tools View:** Clean table interface displaying post IDs, titles, live/revision post statuses, element IDs, and restriction modes.
-2. **Post ID Filtering:** Filter panel allowing granular control over specific post IDs for scanning, migration, rollback, and cleanup.
+2. **Post ID Filtering & Template Selector:** Filter panel allowing granular control over post IDs and optional selection of an Elementor fallback template for logged-out users.
 
 == Changelog ==
+
+= 1.3.0 =
+* Feature: Added Logged-Out Fallback Template appending option (`--append_template` CLI flag and Admin UI dropdown selector).
+* Architecture: Generates standalone root-level flex containers housing `template` widgets cleanly appended to `_elementor_data`.
 
 = 1.2.0 =
 * Feature: Added granular Post ID filtering (`--post_id`) across CLI commands and Admin UI.

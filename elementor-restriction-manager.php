@@ -3,7 +3,7 @@
  * Plugin Name:       SFLWA Elementor Restriction Updater
  * Plugin URI:        https://github.com/sflwa/elementor-restriction-manager/
  * Description:       Automated utility to scan, back up, migrate, and clean up legacy "Restrict for Elementor" settings into native Elementor Display Conditions via WP-CLI or WP-Admin.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Author:            South Florida Web Advisors
  * Author URI:        https://southfloridawebadvisors.com/
  * Text Domain:       sflwa-elementor-restriction-updater
@@ -31,9 +31,6 @@ class SFLWA_Elementor_Restriction_Updater {
         }
     }
 
-    /**
-     * Create Dashboard Menu under Tools -> Elementor Migration
-     */
     public function sflwa_eru_add_menu() {
         add_management_page(
             __( 'SFLWA Elementor Restriction Updater', 'sflwa-elementor-restriction-updater' ),
@@ -44,15 +41,13 @@ class SFLWA_Elementor_Restriction_Updater {
         );
     }
 
-    /**
-     * Render WP-Admin Tools Dashboard UI
-     */
     public function sflwa_eru_render_admin_page() {
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_die( esc_html__( 'You do not have sufficient permissions to access this page.', 'sflwa-elementor-restriction-updater' ) );
         }
 
-        $selected_post_ids = isset( $_REQUEST['sflwa_eru_post_ids'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['sflwa_eru_post_ids'] ) ) : '';
+        $selected_post_ids  = isset( $_REQUEST['sflwa_eru_post_ids'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['sflwa_eru_post_ids'] ) ) : '';
+        $append_template_id = isset( $_REQUEST['sflwa_eru_append_template'] ) ? absint( $_REQUEST['sflwa_eru_append_template'] ) : 0;
 
         // Handle Admin UI Action Submissions
         if ( isset( $_POST['sflwa_eru_action'] ) ) {
@@ -63,7 +58,7 @@ class SFLWA_Elementor_Restriction_Updater {
 
             switch ( $action ) {
                 case 'migrate':
-                    $result = $this->sflwa_eru_run_migration( false, false, $post_ids );
+                    $result = $this->sflwa_eru_run_migration( false, false, $post_ids, $append_template_id );
                     echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( sprintf( __( 'Migration finished. Updated %d post(s).', 'sflwa-elementor-restriction-updater' ), $result ) ) . '</p></div>';
                     break;
 
@@ -82,6 +77,7 @@ class SFLWA_Elementor_Restriction_Updater {
         $parsed_filter_ids = ! empty( $selected_post_ids ) ? array_map( 'absint', array_filter( explode( ',', $selected_post_ids ) ) ) : [];
         $scan_data         = $this->sflwa_eru_get_scan_results( $parsed_filter_ids );
         $backup_count      = $this->sflwa_eru_get_backup_count( $parsed_filter_ids );
+        $elementor_templates = $this->sflwa_eru_get_elementor_templates();
         ?>
         <div class="wrap">
             <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
@@ -91,8 +87,10 @@ class SFLWA_Elementor_Restriction_Updater {
 
             <form method="get" action="" style="margin-bottom: 20px; background: #fff; padding: 15px; border: 1px solid #ccc; max-width: 800px;">
                 <input type="hidden" name="page" value="sflwa-elementor-restriction-updater">
-                <label for="sflwa_eru_post_ids"><strong><?php esc_html_e( 'Filter by Post ID(s):', 'sflwa-elementor-restriction-updater' ); ?></strong></label>
-                <input type="text" name="sflwa_eru_post_ids" id="sflwa_eru_post_ids" class="regular-text" value="<?php echo esc_attr( $selected_post_ids ); ?>" placeholder="e.g. 2438 or 2438, 6980">
+                <p>
+                    <label for="sflwa_eru_post_ids"><strong><?php esc_html_e( 'Filter by Post ID(s):', 'sflwa-elementor-restriction-updater' ); ?></strong></label><br>
+                    <input type="text" name="sflwa_eru_post_ids" id="sflwa_eru_post_ids" class="regular-text" value="<?php echo esc_attr( $selected_post_ids ); ?>" placeholder="e.g. 2438 or 2438, 6980">
+                </p>
                 <?php submit_button( __( 'Filter Results', 'sflwa-elementor-restriction-updater' ), 'secondary', 'submit', false ); ?>
                 <?php if ( ! empty( $selected_post_ids ) ) : ?>
                     <a href="<?php echo esc_url( admin_url( 'tools.php?page=sflwa-elementor-restriction-updater' ) ); ?>" class="button button-link" style="margin-left: 10px;"><?php esc_html_e( 'Clear Filter', 'sflwa-elementor-restriction-updater' ); ?></a>
@@ -138,10 +136,24 @@ class SFLWA_Elementor_Restriction_Updater {
             <br /><hr />
 
             <h2><?php esc_html_e( '2. Migration Actions', 'sflwa-elementor-restriction-updater' ); ?></h2>
-            <form method="post" style="display: inline-block; margin-right: 10px;">
+            <form method="post" style="margin-bottom: 20px; background: #fff; padding: 15px; border: 1px solid #ccc; max-width: 800px;">
                 <?php wp_nonce_field( 'sflwa_eru_migration_action', 'sflwa_eru_nonce' ); ?>
                 <input type="hidden" name="sflwa_eru_action" value="migrate">
                 <input type="hidden" name="sflwa_eru_post_ids" value="<?php echo esc_attr( $selected_post_ids ); ?>">
+
+                <p>
+                    <label for="sflwa_eru_append_template"><strong><?php esc_html_e( 'Optional Logged-Out Fallback Template:', 'sflwa-elementor-restriction-updater' ); ?></strong></label><br>
+                    <select name="sflwa_eru_append_template" id="sflwa_eru_append_template" style="max-width: 400px; width: 100%;">
+                        <option value="0"><?php esc_html_e( '-- None (Do Not Append Template) --', 'sflwa-elementor-restriction-updater' ); ?></option>
+                        <?php foreach ( $elementor_templates as $tmpl_id => $tmpl_title ) : ?>
+                            <option value="<?php echo esc_attr( $tmpl_id ); ?>" <?php selected( $append_template_id, $tmpl_id ); ?>>
+                                <?php echo esc_html( sprintf( '%s (ID: %d)', $tmpl_title, $tmpl_id ) ); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <br><span class="description"><?php esc_html_e( 'Appends a new container at the end of the migrated page containing this template, restricted natively to Logged-Out users.', 'sflwa-elementor-restriction-updater' ); ?></span>
+                </p>
+
                 <?php submit_button( __( 'Run Live Migration', 'sflwa-elementor-restriction-updater' ), 'primary', 'submit', false ); ?>
             </form>
 
@@ -230,7 +242,7 @@ class SFLWA_Elementor_Restriction_Updater {
         return $found_elements;
     }
 
-    private function sflwa_eru_run_migration( bool $dry_run = false, bool $skip_backup = false, array $post_ids = [] ) {
+    private function sflwa_eru_run_migration( bool $dry_run = false, bool $skip_backup = false, array $post_ids = [], int $append_template_id = 0 ) {
         global $wpdb;
 
         $sql = "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value LIKE %s";
@@ -304,6 +316,11 @@ class SFLWA_Elementor_Restriction_Updater {
 
             $migrate_elements( $data );
 
+            // Append Logged-Out Fallback Container if a template ID is provided
+            if ( $modified && $append_template_id > 0 ) {
+                $data[] = $this->sflwa_eru_build_fallback_container( $append_template_id );
+            }
+
             if ( $modified && ! $dry_run ) {
                 if ( ! $skip_backup ) {
                     update_post_meta( $row->post_id, '_elementor_data_backup_legacy', $row->meta_value );
@@ -321,6 +338,59 @@ class SFLWA_Elementor_Restriction_Updater {
         }
 
         return $updated_posts;
+    }
+
+    /**
+     * Helper to build a root-level Elementor Container housing an inner Template widget
+     */
+    private function sflwa_eru_build_fallback_container( int $template_id ): array {
+        $container_hex = substr( md5( uniqid( rand(), true ) ), 0, 7 );
+        $widget_hex    = substr( md5( uniqid( rand(), true ) ), 0, 7 );
+
+        $logged_out_rule = [
+            [
+                'condition'  => 'user_status',
+                'comparator' => 'is',
+                'status'     => 'logged_out',
+            ]
+        ];
+
+        return [
+            'id'       => $container_hex,
+            'elType'   => 'container',
+            'settings' => [
+                'flex_direction'       => 'column',
+                'e_display_conditions' => [ json_encode( [ $logged_out_rule ] ) ],
+            ],
+            'elements' => [
+                [
+                    'id'         => $widget_hex,
+                    'elType'     => 'widget',
+                    'widgetType' => 'template',
+                    'settings'   => [
+                        'template_id' => (string) $template_id,
+                    ],
+                    'elements'   => [],
+                ]
+            ],
+            'isInner' => false,
+        ];
+    }
+
+    private function sflwa_eru_get_elementor_templates(): array {
+        $posts = get_posts( [
+            'post_type'      => 'elementor_library',
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+            'orderby'        => 'title',
+            'order'          => 'ASC',
+        ] );
+
+        $templates = [];
+        foreach ( $posts as $p ) {
+            $templates[$p->ID] = $p->post_title;
+        }
+        return $templates;
     }
 
     private function sflwa_eru_run_rollback( array $post_ids = [] ) {
@@ -383,9 +453,6 @@ class SFLWA_Elementor_Restriction_Updater {
         return (int) $wpdb->get_var( $wpdb->prepare( $sql, ...$params ) );
     }
 
-    /**
-     * Helper to parse --post_id parameter from CLI arguments
-     */
     private function sflwa_eru_parse_cli_post_ids( array $assoc_args ): array {
         if ( empty( $assoc_args['post_id'] ) ) {
             return [];
@@ -410,11 +477,12 @@ class SFLWA_Elementor_Restriction_Updater {
     }
 
     public function sflwa_eru_cli_migrate( $args, $assoc_args ) {
-        $dry_run     = isset( $assoc_args['dry-run'] );
-        $skip_backup = isset( $assoc_args['skip-backup'] );
-        $post_ids    = $this->sflwa_eru_parse_cli_post_ids( $assoc_args );
+        $dry_run            = isset( $assoc_args['dry-run'] );
+        $skip_backup        = isset( $assoc_args['skip-backup'] );
+        $post_ids           = $this->sflwa_eru_parse_cli_post_ids( $assoc_args );
+        $append_template_id = isset( $assoc_args['append_template'] ) ? absint( $assoc_args['append_template'] ) : 0;
 
-        $updated = $this->sflwa_eru_run_migration( $dry_run, $skip_backup, $post_ids );
+        $updated = $this->sflwa_eru_run_migration( $dry_run, $skip_backup, $post_ids, $append_template_id );
         if ( $dry_run ) {
             WP_CLI::log( '[Dry Run] Migration complete check performed.' );
         } else {

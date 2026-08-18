@@ -3,14 +3,15 @@
  * Plugin Name:       SFLWA Elementor Restriction Updater
  * Plugin URI:        https://github.com/sflwa/elementor-restriction-manager/
  * Description:       Automated utility to scan, back up, migrate, and clean up legacy "Restrict for Elementor" settings into native Elementor Display Conditions via WP-CLI or WP-Admin.
- * Version:           1.0.0
+ * Version:           1.2.0
  * Author:            South Florida Web Advisors
  * Author URI:        https://southfloridawebadvisors.com/
  * Text Domain:       sflwa-elementor-restriction-updater
  * License:           GPLv2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Requires at least: 5.8
- * Requires PHP:      7.4
+ * Requires at least: 6.0
+ * Tested up to:      7.0
+ * Requires PHP:      8.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -51,38 +52,52 @@ class SFLWA_Elementor_Restriction_Updater {
             wp_die( esc_html__( 'You do not have sufficient permissions to access this page.', 'sflwa-elementor-restriction-updater' ) );
         }
 
+        $selected_post_ids = isset( $_REQUEST['sflwa_eru_post_ids'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['sflwa_eru_post_ids'] ) ) : '';
+
         // Handle Admin UI Action Submissions
         if ( isset( $_POST['sflwa_eru_action'] ) ) {
             check_admin_referer( 'sflwa_eru_migration_action', 'sflwa_eru_nonce' );
 
-            $action = sanitize_text_field( wp_unslash( $_POST['sflwa_eru_action'] ) );
+            $action   = sanitize_text_field( wp_unslash( $_POST['sflwa_eru_action'] ) );
+            $post_ids = ! empty( $selected_post_ids ) ? array_map( 'absint', array_filter( explode( ',', $selected_post_ids ) ) ) : [];
 
             switch ( $action ) {
                 case 'migrate':
-                    $result = $this->sflwa_eru_run_migration();
+                    $result = $this->sflwa_eru_run_migration( false, false, $post_ids );
                     echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( sprintf( __( 'Migration finished. Updated %d post(s).', 'sflwa-elementor-restriction-updater' ), $result ) ) . '</p></div>';
                     break;
 
                 case 'rollback':
-                    $result = $this->sflwa_eru_run_rollback();
+                    $result = $this->sflwa_eru_run_rollback( $post_ids );
                     echo '<div class="notice notice-info is-dismissible"><p>' . esc_html( sprintf( __( 'Rollback complete. Restored %d post(s).', 'sflwa-elementor-restriction-updater' ), $result ) ) . '</p></div>';
                     break;
 
                 case 'cleanup':
-                    $result = $this->sflwa_eru_run_cleanup();
+                    $result = $this->sflwa_eru_run_cleanup( $post_ids );
                     echo '<div class="notice notice-warning is-dismissible"><p>' . esc_html( sprintf( __( 'Deleted %d temporary backup record(s).', 'sflwa-elementor-restriction-updater' ), $result ) ) . '</p></div>';
                     break;
             }
         }
 
-        $scan_data    = $this->sflwa_eru_get_scan_results();
-        $backup_count = $this->sflwa_eru_get_backup_count();
+        $parsed_filter_ids = ! empty( $selected_post_ids ) ? array_map( 'absint', array_filter( explode( ',', $selected_post_ids ) ) ) : [];
+        $scan_data         = $this->sflwa_eru_get_scan_results( $parsed_filter_ids );
+        $backup_count      = $this->sflwa_eru_get_backup_count( $parsed_filter_ids );
         ?>
         <div class="wrap">
             <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
             <p><?php esc_html_e( 'Scan and migrate legacy Restrict for Elementor settings to native Elementor Display Conditions.', 'sflwa-elementor-restriction-updater' ); ?></p>
 
             <hr />
+
+            <form method="get" action="" style="margin-bottom: 20px; background: #fff; padding: 15px; border: 1px solid #ccc; max-width: 800px;">
+                <input type="hidden" name="page" value="sflwa-elementor-restriction-updater">
+                <label for="sflwa_eru_post_ids"><strong><?php esc_html_e( 'Filter by Post ID(s):', 'sflwa-elementor-restriction-updater' ); ?></strong></label>
+                <input type="text" name="sflwa_eru_post_ids" id="sflwa_eru_post_ids" class="regular-text" value="<?php echo esc_attr( $selected_post_ids ); ?>" placeholder="e.g. 2438 or 2438, 6980">
+                <?php submit_button( __( 'Filter Results', 'sflwa-elementor-restriction-updater' ), 'secondary', 'submit', false ); ?>
+                <?php if ( ! empty( $selected_post_ids ) ) : ?>
+                    <a href="<?php echo esc_url( admin_url( 'tools.php?page=sflwa-elementor-restriction-updater' ) ); ?>" class="button button-link" style="margin-left: 10px;"><?php esc_html_e( 'Clear Filter', 'sflwa-elementor-restriction-updater' ); ?></a>
+                <?php endif; ?>
+            </form>
 
             <h2><?php esc_html_e( '1. Scan Results', 'sflwa-elementor-restriction-updater' ); ?></h2>
             <?php if ( empty( $scan_data ) ) : ?>
@@ -92,10 +107,11 @@ class SFLWA_Elementor_Restriction_Updater {
                     <thead>
                         <tr>
                             <th style="width: 10%;"><?php esc_html_e( 'Post ID', 'sflwa-elementor-restriction-updater' ); ?></th>
-                            <th style="width: 35%;"><?php esc_html_e( 'Title', 'sflwa-elementor-restriction-updater' ); ?></th>
+                            <th style="width: 30%;"><?php esc_html_e( 'Title', 'sflwa-elementor-restriction-updater' ); ?></th>
+                            <th style="width: 15%;"><?php esc_html_e( 'Status', 'sflwa-elementor-restriction-updater' ); ?></th>
                             <th style="width: 15%;"><?php esc_html_e( 'Element ID', 'sflwa-elementor-restriction-updater' ); ?></th>
-                            <th style="width: 15%;"><?php esc_html_e( 'Type', 'sflwa-elementor-restriction-updater' ); ?></th>
-                            <th style="width: 25%;"><?php esc_html_e( 'Restriction Mode', 'sflwa-elementor-restriction-updater' ); ?></th>
+                            <th style="width: 12%;"><?php esc_html_e( 'Type', 'sflwa-elementor-restriction-updater' ); ?></th>
+                            <th style="width: 18%;"><?php esc_html_e( 'Restriction Mode', 'sflwa-elementor-restriction-updater' ); ?></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -103,6 +119,13 @@ class SFLWA_Elementor_Restriction_Updater {
                             <tr>
                                 <td><?php echo esc_html( $item['Post ID'] ); ?></td>
                                 <td><strong><a href="<?php echo esc_url( get_edit_post_link( $item['Post ID'] ) ); ?>"><?php echo esc_html( $item['Title'] ); ?></a></strong></td>
+                                <td>
+                                    <?php if ( $item['Status'] === 'revision' ) : ?>
+                                        <span style="color: #d63638; font-weight: bold;"><?php esc_html_e( 'Revision', 'sflwa-elementor-restriction-updater' ); ?></span>
+                                    <?php else : ?>
+                                        <span style="color: #00a32a; font-weight: bold;"><?php echo esc_html( ucfirst( $item['Status'] ) ); ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><code><?php echo esc_html( $item['Element ID'] ); ?></code></td>
                                 <td><?php echo esc_html( $item['Type'] ); ?></td>
                                 <td><?php echo esc_html( $item['Restriction'] ); ?></td>
@@ -118,6 +141,7 @@ class SFLWA_Elementor_Restriction_Updater {
             <form method="post" style="display: inline-block; margin-right: 10px;">
                 <?php wp_nonce_field( 'sflwa_eru_migration_action', 'sflwa_eru_nonce' ); ?>
                 <input type="hidden" name="sflwa_eru_action" value="migrate">
+                <input type="hidden" name="sflwa_eru_post_ids" value="<?php echo esc_attr( $selected_post_ids ); ?>">
                 <?php submit_button( __( 'Run Live Migration', 'sflwa-elementor-restriction-updater' ), 'primary', 'submit', false ); ?>
             </form>
 
@@ -125,12 +149,14 @@ class SFLWA_Elementor_Restriction_Updater {
                 <form method="post" style="display: inline-block; margin-right: 10px;">
                     <?php wp_nonce_field( 'sflwa_eru_migration_action', 'sflwa_eru_nonce' ); ?>
                     <input type="hidden" name="sflwa_eru_action" value="rollback">
+                    <input type="hidden" name="sflwa_eru_post_ids" value="<?php echo esc_attr( $selected_post_ids ); ?>">
                     <?php submit_button( sprintf( __( 'Rollback Changes (%d Backup Found)', 'sflwa-elementor-restriction-updater' ), $backup_count ), 'secondary', 'submit', false ); ?>
                 </form>
 
                 <form method="post" style="display: inline-block;">
                     <?php wp_nonce_field( 'sflwa_eru_migration_action', 'sflwa_eru_nonce' ); ?>
                     <input type="hidden" name="sflwa_eru_action" value="cleanup">
+                    <input type="hidden" name="sflwa_eru_post_ids" value="<?php echo esc_attr( $selected_post_ids ); ?>">
                     <?php submit_button( __( 'Delete Backup Meta', 'sflwa-elementor-restriction-updater' ), 'delete', 'submit', false, [ 'onclick' => 'return confirm("' . esc_js( __( 'Are you sure you want to permanently delete backup keys?', 'sflwa-elementor-restriction-updater' ) ) . '");' ] ); ?>
                 </form>
             <?php endif; ?>
@@ -142,15 +168,19 @@ class SFLWA_Elementor_Restriction_Updater {
        CORE ENGINE LOGIC (Shared between CLI and Admin UI)
        ========================================================================== */
 
-    private function sflwa_eru_get_scan_results() {
+    private function sflwa_eru_get_scan_results( array $post_ids = [] ) {
         global $wpdb;
 
-        $results = $wpdb->get_results( $wpdb->prepare( "
-            SELECT post_id, meta_value 
-            FROM {$wpdb->postmeta} 
-            WHERE meta_key = %s 
-            AND meta_value LIKE %s
-        ", '_elementor_data', '%restrict_for_elementor%' ) );
+        $sql = "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value LIKE %s";
+        $params = [ '_elementor_data', '%restrict_for_elementor%' ];
+
+        if ( ! empty( $post_ids ) ) {
+            $placeholders = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+            $sql .= " AND post_id IN ({$placeholders})";
+            $params = array_merge( $params, $post_ids );
+        }
+
+        $results = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ) );
 
         if ( empty( $results ) ) return [];
 
@@ -160,7 +190,9 @@ class SFLWA_Elementor_Restriction_Updater {
             $data = json_decode( $row->meta_value, true );
             if ( ! is_array( $data ) ) continue;
 
-            $scan_elements = function( $elements ) use ( &$scan_elements, &$found_elements, $row ) {
+            $post_status = get_post_status( $row->post_id ) ?: 'unknown';
+
+            $scan_elements = function( $elements ) use ( &$scan_elements, &$found_elements, $row, $post_status ) {
                 foreach ( $elements as $element ) {
                     $settings = $element['settings'] ?? [];
 
@@ -179,6 +211,7 @@ class SFLWA_Elementor_Restriction_Updater {
                         $found_elements[] = [
                             'Post ID'     => $row->post_id,
                             'Title'       => get_the_title( $row->post_id ),
+                            'Status'      => $post_status,
                             'Element ID'  => $element['id'] ?? 'N/A',
                             'Type'        => ($element['elType'] === 'widget') ? ($element['widgetType'] ?? 'widget') : $element['elType'],
                             'Restriction' => $settings['restrict_for_elementor_show_to'] ?? ($has_orphan ? 'Orphaned Meta' : 'Enabled'),
@@ -197,15 +230,19 @@ class SFLWA_Elementor_Restriction_Updater {
         return $found_elements;
     }
 
-    private function sflwa_eru_run_migration( $dry_run = false, $skip_backup = false ) {
+    private function sflwa_eru_run_migration( bool $dry_run = false, bool $skip_backup = false, array $post_ids = [] ) {
         global $wpdb;
 
-        $results = $wpdb->get_results( $wpdb->prepare( "
-            SELECT post_id, meta_value 
-            FROM {$wpdb->postmeta} 
-            WHERE meta_key = %s 
-            AND meta_value LIKE %s
-        ", '_elementor_data', '%restrict_for_elementor%' ) );
+        $sql = "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value LIKE %s";
+        $params = [ '_elementor_data', '%restrict_for_elementor%' ];
+
+        if ( ! empty( $post_ids ) ) {
+            $placeholders = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+            $sql .= " AND post_id IN ({$placeholders})";
+            $params = array_merge( $params, $post_ids );
+        }
+
+        $results = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ) );
 
         if ( empty( $results ) ) return 0;
 
@@ -286,14 +323,19 @@ class SFLWA_Elementor_Restriction_Updater {
         return $updated_posts;
     }
 
-    private function sflwa_eru_run_rollback() {
+    private function sflwa_eru_run_rollback( array $post_ids = [] ) {
         global $wpdb;
 
-        $backups = $wpdb->get_results( $wpdb->prepare( "
-            SELECT post_id, meta_value 
-            FROM {$wpdb->postmeta} 
-            WHERE meta_key = %s
-        ", '_elementor_data_backup_legacy' ) );
+        $sql = "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s";
+        $params = [ '_elementor_data_backup_legacy' ];
+
+        if ( ! empty( $post_ids ) ) {
+            $placeholders = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+            $sql .= " AND post_id IN ({$placeholders})";
+            $params = array_merge( $params, $post_ids );
+        }
+
+        $backups = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ) );
 
         if ( empty( $backups ) ) return 0;
 
@@ -311,23 +353,45 @@ class SFLWA_Elementor_Restriction_Updater {
         return $count;
     }
 
-    private function sflwa_eru_run_cleanup() {
+    private function sflwa_eru_run_cleanup( array $post_ids = [] ) {
         global $wpdb;
 
-        return $wpdb->query( $wpdb->prepare( "
-            DELETE FROM {$wpdb->postmeta} 
-            WHERE meta_key = %s
-        ", '_elementor_data_backup_legacy' ) );
+        $sql = "DELETE FROM {$wpdb->postmeta} WHERE meta_key = %s";
+        $params = [ '_elementor_data_backup_legacy' ];
+
+        if ( ! empty( $post_ids ) ) {
+            $placeholders = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+            $sql .= " AND post_id IN ({$placeholders})";
+            $params = array_merge( $params, $post_ids );
+        }
+
+        return $wpdb->query( $wpdb->prepare( $sql, ...$params ) );
     }
 
-    private function sflwa_eru_get_backup_count() {
+    private function sflwa_eru_get_backup_count( array $post_ids = [] ) {
         global $wpdb;
 
-        return (int) $wpdb->get_var( $wpdb->prepare( "
-            SELECT COUNT(*) 
-            FROM {$wpdb->postmeta} 
-            WHERE meta_key = %s
-        ", '_elementor_data_backup_legacy' ) );
+        $sql = "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s";
+        $params = [ '_elementor_data_backup_legacy' ];
+
+        if ( ! empty( $post_ids ) ) {
+            $placeholders = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+            $sql .= " AND post_id IN ({$placeholders})";
+            $params = array_merge( $params, $post_ids );
+        }
+
+        return (int) $wpdb->get_var( $wpdb->prepare( $sql, ...$params ) );
+    }
+
+    /**
+     * Helper to parse --post_id parameter from CLI arguments
+     */
+    private function sflwa_eru_parse_cli_post_ids( array $assoc_args ): array {
+        if ( empty( $assoc_args['post_id'] ) ) {
+            return [];
+        }
+        $raw = (string) $assoc_args['post_id'];
+        return array_map( 'absint', array_filter( explode( ',', $raw ) ) );
     }
 
     /* ==========================================================================
@@ -335,9 +399,11 @@ class SFLWA_Elementor_Restriction_Updater {
        ========================================================================== */
 
     public function sflwa_eru_cli_scan( $args, $assoc_args ) {
-        $found_elements = $this->sflwa_eru_get_scan_results();
+        $post_ids       = $this->sflwa_eru_parse_cli_post_ids( $assoc_args );
+        $found_elements = $this->sflwa_eru_get_scan_results( $post_ids );
+
         if ( ! empty( $found_elements ) ) {
-            WP_CLI\Utils\format_items( 'table', $found_elements, [ 'Post ID', 'Title', 'Element ID', 'Type', 'Restriction' ] );
+            WP_CLI\Utils\format_items( 'table', $found_elements, [ 'Post ID', 'Title', 'Status', 'Element ID', 'Type', 'Restriction' ] );
         } else {
             WP_CLI::success( 'No active restrictions found inside element settings.' );
         }
@@ -346,8 +412,9 @@ class SFLWA_Elementor_Restriction_Updater {
     public function sflwa_eru_cli_migrate( $args, $assoc_args ) {
         $dry_run     = isset( $assoc_args['dry-run'] );
         $skip_backup = isset( $assoc_args['skip-backup'] );
+        $post_ids    = $this->sflwa_eru_parse_cli_post_ids( $assoc_args );
 
-        $updated = $this->sflwa_eru_run_migration( $dry_run, $skip_backup );
+        $updated = $this->sflwa_eru_run_migration( $dry_run, $skip_backup, $post_ids );
         if ( $dry_run ) {
             WP_CLI::log( '[Dry Run] Migration complete check performed.' );
         } else {
@@ -356,7 +423,9 @@ class SFLWA_Elementor_Restriction_Updater {
     }
 
     public function sflwa_eru_cli_rollback( $args, $assoc_args ) {
-        $count = $this->sflwa_eru_run_rollback();
+        $post_ids = $this->sflwa_eru_parse_cli_post_ids( $assoc_args );
+        $count    = $this->sflwa_eru_run_rollback( $post_ids );
+
         if ( $count > 0 ) {
             WP_CLI::success( "Rollback complete. Restored {$count} post(s)." );
         } else {
@@ -365,7 +434,8 @@ class SFLWA_Elementor_Restriction_Updater {
     }
 
     public function sflwa_eru_cli_cleanup_backups( $args, $assoc_args ) {
-        $count = $this->sflwa_eru_run_cleanup();
+        $post_ids = $this->sflwa_eru_parse_cli_post_ids( $assoc_args );
+        $count    = $this->sflwa_eru_run_cleanup( $post_ids );
         WP_CLI::success( "Deleted {$count} backup record(s)." );
     }
 }

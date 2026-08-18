@@ -1,73 +1,84 @@
-=== Elementor Restriction Manager ===
+=== SFLWA Elementor Restriction Updater ===
 Contributors: sflwa
 Tags: elementor, wp-cli, display-conditions, migration, restrict-for-elementor
-Requires at least: 5.8
-Tested up to: 6.6
-Requires PHP: 7.4
+Requires at least: 6.0
+Tested up to: 7.0
+Stable tag: 1.2.0
+Requires PHP: 8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Automate the migration from the legacy "Restrict for Elementor" plugin to Elementor's native Display Conditions using WP-CLI.
+Automate the migration from legacy "Restrict for Elementor" settings to native Elementor Display Conditions via WP-CLI or WP-Admin.
 
 == Description ==
 
-Elementor Restriction Manager is a lightweight developer tool (usable as an Must-Use / MU-Plugin or standard plugin) that provides custom WP-CLI commands to locate, back up, migrate, and clean up legacy restriction meta data across your WordPress site.
+**SFLWA Elementor Restriction Updater** provides an agency-grade, automated utility to scan, back up, migrate, and clean up legacy "Restrict for Elementor" settings across your site, replacing them seamlessly with native Elementor Display Conditions (`e_display_conditions`).
 
-It scans `_elementor_data` inside `wp_postmeta`, detects legacy `restrict_for_elementor_*` keys (including orphaned metadata), maps them 1:1 to native Elementor Display Conditions (`e_display_conditions`), and automatically creates safety backups.
+Effortlessly transition away from buggy third-party restriction plugins by executing granular updates on specific post IDs or running site-wide migrations—either directly through WP-CLI or via a native dashboard interface under **Tools > Elementor Migration**.
 
-= Features =
-* **Scan & Detect:** Find all pages, posts, and specific widget IDs still utilizing legacy restrictions or carrying orphaned plugin settings.
-* **1:1 Migration:** Converts roles (`user_role`), logged-in status (`logged_in_users`), and logged-out status (`logged_out_users`) to native Elementor Display Conditions.
-* **Automated Backups:** Automatically clones `_elementor_data` to `_elementor_data_backup_legacy` prior to running updates.
-* **Cache Management:** Automatically flushes post-specific and global Elementor CSS caches upon migration or rollback.
-* **Safety Rollback:** One-command restoration to revert changes if needed.
+### Key Features:
+* **Dual Execution Modes:** Perform scans and migrations using dedicated WP-CLI commands or through the built-in WP-Admin dashboard interface under **Tools > Elementor Migration**.
+* **Granular Control & Post ID Filtering:** Pass specific post IDs (e.g., `--post_id=2438,6980`) via CLI or the Admin UI filter to run targeted migrations without touching the rest of your site.
+* **Post Status Awareness:** Instantly distinguish between live pages (`publish`), revisions (`revision`), draft, or private post states during scanning.
+* **1:1 Migration Mapping:** Maps legacy roles (`user_role`), logged-in status (`logged_in_users`), and logged-out status (`logged_out_users`) cleanly into native Elementor Display Conditions payload structures.
+* **Orphaned Metadata Cleanup:** Detects and strips leftover plugin meta keys and corrupted settings left behind by earlier plugin versions.
+* **Automated Safety Backups:** Automatically clones `_elementor_data` to a temporary `_elementor_data_backup_legacy` meta key before running updates.
+* **One-Click Rollback & Cleanup:** Easily restore original data states using native rollback commands, or permanently flush temporary backup keys when finished.
+* **Automatic Cache Management:** Clears post-specific CSS meta and flushes Elementor's global file manager cache upon migration or rollback.
 
 == Installation ==
 
-= As a Must-Use (MU) Plugin (Recommended) =
-1. Download `elementor-restriction-manager.php`.
-2. Upload the file directly to your site's `wp-content/mu-plugins/` directory via SSH, FTP, or WP-CLI.
-3. No activation is required; the WP-CLI commands will instantly be available.
-
-= As a Standard Plugin =
-1. Download or clone this repository into `wp-content/plugins/elementor-restriction-manager`.
-2. Activate the plugin via the WordPress Admin dashboard or via WP-CLI:
-   `wp plugin activate elementor-restriction-manager`
+1. Upload the `sflwa-elementor-restriction-updater` folder to the `/wp-content/plugins/` directory (or upload the `.zip` archive via **Plugins > Add New**).
+2. Activate the plugin through the **Plugins** menu in WordPress.
+3. Access the plugin interface via **Tools > Elementor Migration** in your WP Admin sidebar, or run `wp find-restrictions` in terminal via WP-CLI.
 
 == WP-CLI Commands & Usage ==
 
-= 1. Scan for Legacy Restrictions =
-Locates all posts and specific Elementor elements containing legacy restrictions or orphaned settings:
+= 1. Scan for Restrictions =
+Locates all posts and specific Elementor elements containing legacy settings or orphaned keys:
 `wp find-restrictions`
+
+*Filter by Post ID(s):*
+`wp find-restrictions --post_id=2438,6980`
 
 = 2. Dry Run (Preview Migration) =
 Test the migration process without modifying the database:
 `wp migrate-elementor-restrictions --dry-run`
 
 = 3. Execute Migration =
-Converts legacy restrictions to Elementor's native Display Conditions, cleans up old metadata keys, clears Elementor CSS cache, and creates an automatic backup:
+Converts legacy restrictions to Elementor's native Display Conditions, strips old metadata keys, clears CSS cache, and creates an automatic backup:
 `wp migrate-elementor-restrictions`
 
 *Optional Flags:*
-* `--skip-backup` : Runs the migration without saving a backup postmeta key.
+* `--post_id=2438,6980` : Restricts migration to specific post IDs.
+* `--skip-backup` : Runs the migration without creating a backup postmeta key.
 
-= 4. Rollback / Undo Migration =
+= 4. Rollback Changes =
 Restores the original `_elementor_data` state from `_elementor_data_backup_legacy`:
 `wp rollback-elementor-restrictions`
+`wp rollback-elementor-restrictions --post_id=2438`
 
-== Post-Migration Cleanup ==
+= 5. Cleanup Backup Keys =
+Permanently removes the temporary backup postmeta keys when migration is verified:
+`wp cleanup-restriction-backups`
+`wp cleanup-restriction-backups --post_id=2438`
 
-Once you have verified that your elements display correctly under native Elementor Display Conditions, you can safely deactivate and remove the legacy plugin:
+== Screenshots ==
 
-`wp plugin deactivate restrict-for-elementor`
-`wp plugin delete restrict-for-elementor`
-
-To remove the temporary backup meta keys created during migration, run:
-`wp db query "DELETE FROM $(wp db prefix)postmeta WHERE meta_key = '_elementor_data_backup_legacy';"`
+1. **Admin Tools View:** Clean table interface displaying post IDs, titles, live/revision post statuses, element IDs, and restriction modes.
+2. **Post ID Filtering:** Filter panel allowing granular control over specific post IDs for scanning, migration, rollback, and cleanup.
 
 == Changelog ==
 
+= 1.2.0 =
+* Feature: Added granular Post ID filtering (`--post_id`) across CLI commands and Admin UI.
+* Feature: Added Post Status column (`publish`, `revision`, `draft`, etc.) to scan results to separate live pages from autosaves.
+* Standard: Updated PHP requirement to 8.1 and WordPress compatibility testing to 7.0.
+
+= 1.1.0 =
+* Complete plugin rebranding to **SFLWA Elementor Restriction Updater**.
+* Added WP-Admin dashboard UI under **Tools > Elementor Migration**.
+* Standardized class and function prefixes (`sflwa_eru_`) and wrapped database queries with `$wpdb->prepare()`.
+
 = 1.0.0 =
-* Initial release with WP-CLI scan, migration, cleanup, and rollback support.
-* Full 1:1 mapping for user roles, logged-in users, and guest conditions.
-* Orphaned setting key removal support.
+* Initial release with WP-CLI scan, 1:1 condition mapping, rollback, and backup cleanup functionality.
